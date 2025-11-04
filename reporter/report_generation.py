@@ -1,8 +1,8 @@
 import os
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, Any
-from openpyxl import Workbook
+from typing import Dict, Any, List
+from openpyxl import Workbook, load_workbook
 
 class ReportGenerationAgent:
     def __init__(self, output_dir: str = "output"):
@@ -18,18 +18,35 @@ class ReportGenerationAgent:
     def initialize_excel_report(self) -> str:
         """
         初始化 Excel 報告檔案，建立標題行
+        支援斷點續爬：如果當月報告已存在，載入現有檔案
         """
-        today = datetime.now().strftime("%Y%m%d")
-        base_filename = f"website_summary_report_{today}"
+        # 使用年月格式作為檔案名稱，確保每月一個報告檔案
+        current_month = datetime.now().strftime("%Y-%m")
+        base_filename = f"website_summary_report_{current_month}"
         self.output_path = os.path.join(self.output_dir, f"{base_filename}.xlsx")
         
-        # 檢查檔案是否已存在，如果存在則添加版本號
-        version = 1
-        while os.path.exists(self.output_path):
-            self.output_path = os.path.join(self.output_dir, f"{base_filename}_v{version:02d}.xlsx")
-            version += 1
+        # 檢查當月報告是否已存在
+        if os.path.exists(self.output_path):
+            print(f"📁 發現現有報告檔案: {self.output_path}")
+            try:
+                # 載入現有工作簿
+                self.workbook = load_workbook(self.output_path)
+                self.worksheet = self.workbook.active
+                
+                # 計算下一個要寫入的行號（最後一行的下一行）
+                self.current_row = self.worksheet.max_row + 1
+                
+                print(f"✅ 已載入現有報告，將從第 {self.current_row} 行繼續寫入")
+                return self.output_path
+                
+            except Exception as e:
+                print(f"⚠️ 載入現有報告失敗: {e}")
+                print("📝 將建立新的報告檔案")
+                # 如果載入失敗，建立新檔案
+                pass
         
         # 建立新的工作簿和工作表
+        print(f"📝 建立新的報告檔案: {self.output_path}")
         self.workbook = Workbook()
         self.worksheet = self.workbook.active
         self.worksheet.title = '網站統計摘要'
@@ -53,6 +70,25 @@ class ReportGenerationAgent:
         self.workbook.save(self.output_path)
         
         return self.output_path
+    
+    def get_processed_urls(self) -> List[str]:
+        """
+        取得已處理的網站URL列表，用於斷點續爬
+        """
+        processed_urls = []
+        
+        if not self.workbook or not self.worksheet:
+            print("⚠️ Excel 報告尚未初始化，無法取得已處理的URL列表")
+            return processed_urls
+        
+        # 從第2行開始讀取（第1行是標題）
+        for row in range(2, self.worksheet.max_row + 1):
+            url_cell = self.worksheet.cell(row=row, column=2)  # 網站URL在第2列
+            if url_cell.value:
+                processed_urls.append(str(url_cell.value).strip())
+        
+        print(f"📋 發現 {len(processed_urls)} 個已處理的網站")
+        return processed_urls
     
     async def add_site_to_excel(self, site_stats: Dict[str, Any], log_writer=None) -> None:
         """
