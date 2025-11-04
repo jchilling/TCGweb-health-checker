@@ -4,6 +4,7 @@ import sys
 import asyncio
 import argparse
 import time
+import gc  # 用於強制垃圾回收
 # from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
@@ -74,8 +75,12 @@ async def process_single_website(semaphore: asyncio.Semaphore, browser, url: str
             print(f"❌ 處理網站 '{name or url}' 時發生錯誤: {e}")
             return False
         finally:
-            # 關閉 crawler
+            # 關閉 crawler httpx client
             await crawler.close()
+            # 立即手動清除 crawler 內部的大型字典
+            crawler.clear_memory()
+            # 強制 Python 執行垃圾回收
+            gc.collect()
 
 
 async def main():

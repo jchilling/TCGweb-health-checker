@@ -179,16 +179,24 @@ class WebCrawlerAgent:
             return {"type": "static"}
 
     async def close(self):
-        """Close the httpx client."""
+        """Close the httpx client"""
         await self.client.aclose()
+
+    def clear_memory(self):
+        """
+        手動清除內部的大型字典和變數，以協助垃圾回收(GC)
+        """
+        # 清除主要的大型字典
+        self.page_info_dict = {}
+        self.external_link_results = {}
 
     def get_page_summary(self) -> dict:
         """返回爬蟲結果的摘要字典"""
-        return self.page_info_dict.copy()
+        return self.page_info_dict
     
     def get_external_link_results(self) -> dict:
         """返回外部連結測試結果"""
-        return self.external_link_results.copy()
+        return self.external_link_results
     
     def save_crawl_log(self):
         """完成 log 寫入並關閉 log_writer"""
@@ -996,6 +1004,12 @@ class WebCrawlerAgent:
                 for link in new_links:
                     if link not in visited:
                         queue.append((link, current_url, current_depth + 1))
+                        
+        # 清理局部變數以協助垃圾回收
+        url_to_dir_map.clear()
+        url_to_title_map.clear() 
+        visited.clear()
+        queue.clear()
         
         # 爬取完成，所有結果都存在 page_info_dict 和 external_link_results 中
         return all_results
