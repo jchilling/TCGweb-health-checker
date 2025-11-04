@@ -4,3 +4,5 @@ pandas
 openpyxl
 google-generativeai
 python-dotenv
+playwright
+httpx

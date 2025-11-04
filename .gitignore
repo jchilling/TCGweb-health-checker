@@ -1,8 +1,6 @@
 .env
-reporter/__pycache__/report_generation.cpython-312.pyc
-crawler/__pycache__/web_crawler.cpython-312.pyc
-reporter/__pycache__/__init__.cpython-312.pyc
-crawler/__pycache__/__init__.cpython-312.pyc
-analyzer/__pycache__/__init__.cpython-312.pyc
-analyzer/__pycache__/content_analysis.cpython-312.pyc
+__pycache__/
 *.xlsx
+
+assets/
+config/
