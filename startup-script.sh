@@ -60,7 +60,7 @@ fi
 
 # --- 9. 在背景執行爬蟲程式 ---
 echo "開始執行網站爬蟲 ($PYTHON_SCRIPT)..." >> $LOG_FILE
-CRAWLER_ARGS="--config config/websites.csv --concurrent 4 --no-save-html --no-pagination"
+CRAWLER_ARGS="--config config/websites.csv --concurrent 2 --no-save-html --no-pagination"
 echo "執行指令: $PYTHON_CMD $PYTHON_SCRIPT $CRAWLER_ARGS" >> $LOG_FILE
 
 export GCLOUD_PATH="/usr/bin:/google/google-cloud-sdk/bin"
