@@ -134,11 +134,30 @@ async def _async_crawl_worker(site_config: dict) -> dict:
             del crawler
             await browser.close()
             
+            # 給予 5 秒緩衝時間進行 /tmp 清理
+            await asyncio.sleep(5)
+            
             print(f"✅ [PID {os.getpid()}] 網站 '{name or url}' 處理完成")
             return stats_for_excel
                 
     except Exception as e:
         print(f"❌ [PID {os.getpid()}] 處理網站 '{name or url}' 時發生錯誤: {e}")
+        
+        # 發生錯誤時也要進行清理和等待
+        try:
+            if 'crawler' in locals() and crawler:
+                await crawler.close()
+                crawler.clear_memory()
+                del crawler
+            if 'browser' in locals() and browser:
+                await browser.close()
+            
+            # 給予 5 秒緩衝時間進行 /tmp 清理
+            await asyncio.sleep(5)
+            
+        except Exception as cleanup_e:
+            print(f"💥 [PID {os.getpid()}] 在錯誤清理中發生了額外錯誤: {cleanup_e}")
+            
         return None  # 發生錯誤時返回 None
 
 

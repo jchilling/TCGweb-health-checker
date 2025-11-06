@@ -8,7 +8,7 @@ set -e
 # --- 設定變數 ---
 PROJECT_USER="daanyoyo"
 PROJECT_DIR="/home/$PROJECT_USER/TCGweb-health-checker"
-PYTHON_CMD="python3"
+PYTHON_CMD="python3 -u"
 PYTHON_SCRIPT="gcp_main_mpfast.py"  # 使用 multiprocessing 版本
 LOG_FILE="/home/$PROJECT_USER/crawler_startup.log"
 
