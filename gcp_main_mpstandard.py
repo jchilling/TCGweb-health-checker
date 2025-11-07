@@ -134,9 +134,6 @@ async def _async_crawl_worker(site_config: dict) -> dict:
             del crawler
             await browser.close()
             
-            # 給予 5 秒緩衝時間進行 /tmp 清理
-            await asyncio.sleep(5)
-            
             print(f"✅ [PID {os.getpid()}] 網站 '{name or url}' 處理完成")
             return stats_for_excel
                 
@@ -152,7 +149,7 @@ async def _async_crawl_worker(site_config: dict) -> dict:
             if 'browser' in locals() and browser:
                 await browser.close()
             
-            # 給予 5 秒緩衝時間進行 /tmp 清理
+            # 給予 5 秒緩衝時間
             await asyncio.sleep(5)
             
         except Exception as cleanup_e:
@@ -341,6 +338,10 @@ def main():
                 if stats_for_excel:
                     # Main process 呼叫 add_site_to_excel 寫入結果
                     try:
+                        # 在 Main process 中記錄爬取日期
+                        crawl_date = datetime.now().strftime('%Y-%m-%d %H:%M')
+                        stats_for_excel['crawl_date'] = crawl_date
+                        
                         reporter.add_site_to_excel(stats_for_excel)
                         successful_sites += 1
                     except Exception as e:

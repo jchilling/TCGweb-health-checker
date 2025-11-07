@@ -51,7 +51,7 @@ fi
 echo "開始執行網站爬蟲 ($PYTHON_SCRIPT)..." >> $LOG_FILE
 
 # 使用 multiprocessing 版本的推薦參數
-CRAWLER_ARGS="--depth 3 --concurrent 2 --no-save-html --no-pagination"
+CRAWLER_ARGS="--depth 3 --concurrent 10 --no-save-html --no-pagination"
 echo "執行指令: $PYTHON_CMD $PYTHON_SCRIPT $CRAWLER_ARGS" >> $LOG_FILE
 
 # 在背景執行 (程式內建自動關機功能)

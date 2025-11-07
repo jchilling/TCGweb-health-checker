@@ -53,14 +53,14 @@ class ReportGenerationAgent:
         headers = [
             '網站名稱', '網站URL', '總頁面數', '有日期頁面數', '無日期頁面數',
             '最後更新日期', '一年前內容數量', '一年前內容比例(%)', 
-            '失效內部頁面數', '失效外部連結數', '總外部連結數', '爬取耗時'
+            '失效內部頁面數', '失效外部連結數', '總外部連結數', '爬取耗時', '爬取日期'
         ]
         
         for col, header in enumerate(headers, 1):
             self.worksheet.cell(row=1, column=col, value=header)
         
         # 設定欄位寬度
-        column_widths = [25, 50, 12, 15, 15, 15, 15, 18, 15, 15, 15, 12]
+        column_widths = [25, 50, 12, 15, 15, 15, 15, 18, 15, 15, 15, 12, 12]
         for col, width in enumerate(column_widths, 1):
             self.worksheet.column_dimensions[chr(64 + col)].width = width
         
@@ -116,6 +116,7 @@ class ReportGenerationAgent:
         failed_external_links = stats_for_excel['failed_external_links']
         total_external_links = stats_for_excel['total_external_links']
         crawl_duration = stats_for_excel['crawl_duration']
+        crawl_date = stats_for_excel['crawl_date']
         
         # 準備要寫入的資料
         row_data = [
@@ -130,7 +131,8 @@ class ReportGenerationAgent:
             failed_pages,
             failed_external_links,
             total_external_links,
-            crawl_duration
+            crawl_duration,
+            crawl_date
         ]
         
         # 寫入到當前行
