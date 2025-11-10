@@ -48,7 +48,7 @@ fi
 # 執行爬蟲
 echo "啟動爬蟲程式..." >> $LOG_FILE
 cd "$SCRIPT_DIR"
-chmod +x run-crawler-standard.sh
-./run-crawler-standard.sh >> $LOG_FILE 2>&1
+chmod +x run-crawler-selfqueue.sh
+./run-crawler-selfqueue.sh >> $LOG_FILE 2>&1
 
 echo "VM 啟動腳本執行完成: $(date)" >> $LOG_FILE

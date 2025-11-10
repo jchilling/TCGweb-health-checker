@@ -100,7 +100,6 @@ class ReportGenerationAgent:
             if log_writer:
                 log_writer.log_only(message)
             else:
-                # 主進程中簡化日誌輸出
                 print(message)
         
         # 直接使用傳入的預計算統計數據
@@ -145,7 +144,7 @@ class ReportGenerationAgent:
         # 立即儲存檔案
         self.workbook.save(self.output_path)
         
-        _log(f"已將 '{site_name}' 的資料寫入 Excel (第 {self.current_row - 1} 行)")
+        _log(f"\n已將 '{site_name}' 的資料寫入 Excel (第 {self.current_row - 1} 行)")
     
     def finalize_excel_report(self) -> None:
         """

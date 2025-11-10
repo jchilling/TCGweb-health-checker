@@ -9,7 +9,7 @@ set -e
 PROJECT_USER="daanyoyo"
 PROJECT_DIR="/home/$PROJECT_USER/TCGweb-health-checker"
 PYTHON_CMD="python3 -u"
-PYTHON_SCRIPT="gcp_main_mpstandard.py"  # 使用 multiprocessing 版本
+PYTHON_SCRIPT="gcp_main_mpselfqueue.py"  # 使用 multiprocessing 版本
 LOG_FILE="/home/$PROJECT_USER/crawler_startup.log"
 
 # --- 記錄啟動 ---
@@ -51,7 +51,7 @@ fi
 echo "開始執行網站爬蟲 ($PYTHON_SCRIPT)..." >> $LOG_FILE
 
 # 使用 multiprocessing 版本的推薦參數
-CRAWLER_ARGS="--depth 3 --concurrent 10 --no-save-html --no-pagination"
+CRAWLER_ARGS="--depth 3 --concurrent 16 --no-save-html --no-pagination"
 echo "執行指令: $PYTHON_CMD $PYTHON_SCRIPT $CRAWLER_ARGS" >> $LOG_FILE
 
 # 在背景執行 (程式內建自動關機功能)

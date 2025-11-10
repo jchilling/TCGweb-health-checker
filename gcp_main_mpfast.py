@@ -5,7 +5,6 @@ import asyncio
 import argparse
 import time
 import multiprocessing
-import psutil
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 
@@ -37,29 +36,28 @@ async def _async_crawl_worker(site_config: dict) -> dict:
     print(f"\n🔍 [PID {os.getpid()}] 開始處理網站: {name or url}")
     
     try:
-        # 在子進程中建立 crawler 和 playwright  
+        # 在 subprocess 中建立 crawler 和 playwright
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             crawler = WebCrawlerAgent(save_html_files=save_html, enable_pagination=enable_pagination)
             
             start_time = time.time()
             
-            # 1. 執行爬蟲
+            # 執行爬蟲
             crawl_results = await crawler.crawl_site(browser, url, name=name, max_depth=depth)
             crawl_duration = time.time() - start_time
             crawl_duration_formatted = f"{int(crawl_duration // 60)}分{int(crawl_duration % 60)}秒"
             
-            # 2. 提取大型結果資料
             page_summary = crawler.get_page_summary()
             external_link_results = crawler.get_external_link_results()
 
-            # 3. 儲存 JSON/Log
+            # 儲存 JSON/Log
             json_path = crawler.save_page_summary_to_json()
             if json_path:
                 extract_error_links_from_json(json_path)
             crawler.save_crawl_log()
 
-            # 4. 預先計算統計數據給 Excel
+            # 預先計算統計數據給 Excel
             one_year_ago = datetime.now() - timedelta(days=365)
             total_pages = len(crawl_results)
             failed_pages = sum(1 for status in crawl_results if status >= 400 or status == 0)
@@ -110,7 +108,7 @@ async def _async_crawl_worker(site_config: dict) -> dict:
             pages_with_date = len(past_dates) + len(future_dates)
             outdated_percentage = (outdated_pages / pages_with_date * 100) if pages_with_date > 0 else 0
             
-            # 5. 建立小型結果字典
+            # 建立小型結果字典
             stats_for_excel = {
                 'site_name': name or url,
                 'site_url': url,
@@ -126,7 +124,7 @@ async def _async_crawl_worker(site_config: dict) -> dict:
                 'crawl_duration': crawl_duration_formatted
             }
             
-            # 6. 清理並關閉
+            # 清理並關閉
             del page_summary
             del external_link_results
             await crawler.close()
@@ -139,8 +137,6 @@ async def _async_crawl_worker(site_config: dict) -> dict:
                 
     except Exception as e:
         print(f"❌ [PID {os.getpid()}] 處理網站 '{name or url}' 時發生錯誤: {e}")
-        
-        # 發生錯誤時也要進行清理和等待
         try:
             if 'crawler' in locals() and crawler:
                 await crawler.close()
@@ -162,26 +158,12 @@ def run_crawl_task(site_config: dict) -> dict:
     """
     multiprocessing.Pool 呼叫的包裝函數
     它會建立自己的 asyncio 迴圈
-    並且自我監控記憶體，超標時自動回收
-    """
-    
-    # 讀取主進程傳來的記憶體上限
-    max_mem_mb = site_config.get('global_max_mem_mb', 1024)  # 預設 1024MB (1GB)
-    
-    # 檢查自己的記憶體用量
+    """    
     try:
-        process = psutil.Process(os.getpid())
-        memory_mb = process.memory_info().rss / 1024 / 1024
-        
-        if memory_mb > max_mem_mb:
-            print(f"♻️ [PID {os.getpid()}] 記憶體超標 ({memory_mb:.1f} MB > {max_mem_mb} MB)，自動回收 worker process")
-            sys.exit()  # 自殺，讓 Pool 啟動新的乾淨進程
-            
+        return asyncio.run(_async_crawl_worker(site_config))
     except Exception as e:
-        print(f"⚠️ [PID {os.getpid()}] 記憶體檢查失敗: {e}")
-
-    # 沒超標，才執行爬蟲任務
-    return asyncio.run(_async_crawl_worker(site_config))
+        print(f"💥 [PID {os.getpid()}] 執行任務 '{site_config.get('name', 'N/A')}' 時發生錯誤: {e}")
+        return None 
 
 
 def auto_shutdown_vm():
@@ -260,14 +242,14 @@ def main():
 
     print("🚀 啟動 Multiprocessing 網站爬蟲...")
 
-    # 1. Mainprocess 初始化 Reporter
+    # 初始化 Reporter
     reporter = ReportGenerationAgent()
     output_path = reporter.initialize_excel_report()
     print(f"Excel 報告檔案初始化完成: {output_path}")
     
     processed_urls = reporter.get_processed_urls()
     
-    # 2. 準備要傳遞給子進程的任務列表
+    # 任務列表
     websites_to_process = []
     for site in websites:
         url = site["URL"]
@@ -314,12 +296,12 @@ def main():
         reporter.finalize_excel_report()
         print(f"📄 報告已儲存到: {output_path}")
         
-        # 關機邏輯
+        # 關機
         auto_shutdown_vm()
         return
 
-    # 3. 使用 multiprocessing.Pool + memory 管理
-    print(f"\n🚀 啟動 {args.concurrent} 個並行處理程序，每個記憶體上限 {args.max_mem_mb} MB")
+    # 使用 multiprocessing.Pool
+    print(f"\n🚀 啟動 {args.concurrent} 個並行處理程序，每個任務後重啟 (maxtasksperchild=1)")
     start_time = time.time()
     
     crawl_success = True
@@ -327,18 +309,16 @@ def main():
     failed_sites = 0
     
     try:
-        # 建立一個 Pool
-        with multiprocessing.Pool(processes=args.concurrent) as pool:
+        with multiprocessing.Pool(processes=args.concurrent, maxtasksperchild=1) as pool:
 
             # 使用 imap_unordered 來即時取得 worker 結果
             results = pool.imap_unordered(run_crawl_task, websites_to_process)
             
-            # Main process 接收從 sub process 傳回的「小字典」
+            # Main process 接收從 sub process 傳回的結果
             for stats_for_excel in results:
                 if stats_for_excel:
-                    # Main process 呼叫 add_site_to_excel 寫入結果
+                    # 呼叫 add_site_to_excel 寫入結果
                     try:
-                        # 在 Main process 中記錄爬取日期
                         crawl_date = datetime.now().strftime('%Y-%m-%d %H:%M')
                         stats_for_excel['crawl_date'] = crawl_date
                         
@@ -380,4 +360,4 @@ def main():
 if __name__ == "__main__":
     # 確保 multiprocessing 在 macOS/Windows 上正常運作
     multiprocessing.freeze_support() 
-    main()  # 直接呼叫同步的 main
+    main()

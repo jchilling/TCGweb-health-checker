@@ -74,15 +74,10 @@ def extract_error_links_from_json(json_file_path):
         if error_pages:
             error_pages_file = website_folder / "error_pages.csv"
             write_to_csv(error_pages, error_pages_file)
-            print(f"  📄 產生 error_pages.csv ({len(error_pages)} 筆)")
         
         if error_external_links:
             error_external_links_file = website_folder / "error_external_links.csv"
             write_to_csv(error_external_links, error_external_links_file)
-            print(f"  📄 產生 error_external_links.csv ({len(error_external_links)} 筆)")
-            
-        if not error_pages and not error_external_links:
-            print(f"  ✅ 沒有發現錯誤連結")
                     
     except Exception as e:
         print(f"  ❌ 提取錯誤連結時發生錯誤: {e}")

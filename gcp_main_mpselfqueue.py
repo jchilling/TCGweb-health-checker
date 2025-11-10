@@ -4,8 +4,11 @@ import sys
 import asyncio
 import argparse
 import time
-import multiprocessing
 import psutil
+import multiprocessing
+from multiprocessing import Process, Queue
+import subprocess
+from queue import Empty 
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 
@@ -37,29 +40,28 @@ async def _async_crawl_worker(site_config: dict) -> dict:
     print(f"\n🔍 [PID {os.getpid()}] 開始處理網站: {name or url}")
     
     try:
-        # 在子進程中建立 crawler 和 playwright  
+        # 在 subprocess 中建立 crawler 和 playwright
         async with async_playwright() as p:
             browser = await p.chromium.launch()
             crawler = WebCrawlerAgent(save_html_files=save_html, enable_pagination=enable_pagination)
             
             start_time = time.time()
             
-            # 1. 執行爬蟲
+            # 執行爬蟲
             crawl_results = await crawler.crawl_site(browser, url, name=name, max_depth=depth)
             crawl_duration = time.time() - start_time
             crawl_duration_formatted = f"{int(crawl_duration // 60)}分{int(crawl_duration % 60)}秒"
             
-            # 2. 提取大型結果資料
             page_summary = crawler.get_page_summary()
             external_link_results = crawler.get_external_link_results()
 
-            # 3. 儲存 JSON/Log
+            # 儲存 JSON/Log
             json_path = crawler.save_page_summary_to_json()
             if json_path:
                 extract_error_links_from_json(json_path)
             crawler.save_crawl_log()
 
-            # 4. 預先計算統計數據給 Excel
+            # 預先計算統計數據給 Excel
             one_year_ago = datetime.now() - timedelta(days=365)
             total_pages = len(crawl_results)
             failed_pages = sum(1 for status in crawl_results if status >= 400 or status == 0)
@@ -110,7 +112,7 @@ async def _async_crawl_worker(site_config: dict) -> dict:
             pages_with_date = len(past_dates) + len(future_dates)
             outdated_percentage = (outdated_pages / pages_with_date * 100) if pages_with_date > 0 else 0
             
-            # 5. 建立小型結果字典
+            # 建立小型結果字典
             stats_for_excel = {
                 'site_name': name or url,
                 'site_url': url,
@@ -126,7 +128,7 @@ async def _async_crawl_worker(site_config: dict) -> dict:
                 'crawl_duration': crawl_duration_formatted
             }
             
-            # 6. 清理並關閉
+            # 清理並關閉
             del page_summary
             del external_link_results
             await crawler.close()
@@ -134,13 +136,10 @@ async def _async_crawl_worker(site_config: dict) -> dict:
             del crawler
             await browser.close()
             
-            print(f"✅ [PID {os.getpid()}] 網站 '{name or url}' 處理完成")
             return stats_for_excel
                 
     except Exception as e:
         print(f"❌ [PID {os.getpid()}] 處理網站 '{name or url}' 時發生錯誤: {e}")
-        
-        # 發生錯誤時也要進行清理和等待
         try:
             if 'crawler' in locals() and crawler:
                 await crawler.close()
@@ -158,30 +157,58 @@ async def _async_crawl_worker(site_config: dict) -> dict:
         return None  # 發生錯誤時返回 None
 
 
-def run_crawl_task(site_config: dict) -> dict:
+def worker_process_loop(worker_id: int, task_queue: Queue, result_queue: Queue, max_mem_mb: int):
     """
-    multiprocessing.Pool 呼叫的包裝函數
-    它會建立自己的 asyncio 迴圈
-    並且自我監控記憶體，超標時自動回收
+    自訂的 Worker Process 迴圈
+    它會先檢查記憶體，再決定是否接任務
     """
+    print(f"✅ [Worker {worker_id} | PID {os.getpid()}] 啟動")
     
-    # 讀取主進程傳來的記憶體上限
-    max_mem_mb = site_config.get('global_max_mem_mb', 1024)  # 預設 1024MB (1GB)
+    process = psutil.Process(os.getpid())
     
-    # 檢查自己的記憶體用量
-    try:
-        process = psutil.Process(os.getpid())
-        memory_mb = process.memory_info().rss / 1024 / 1024
-        
-        if memory_mb > max_mem_mb:
-            print(f"♻️ [PID {os.getpid()}] 記憶體超標 ({memory_mb:.1f} MB > {max_mem_mb} MB)，自動回收 worker process")
-            sys.exit()  # 自殺，讓 Pool 啟動新的乾淨進程
+    while True:
+        try:
+            # 接任務前的記憶體檢查
+            memory_mb = process.memory_info().rss / 1024 / 1024
             
-    except Exception as e:
-        print(f"⚠️ [PID {os.getpid()}] 記憶體檢查失敗: {e}")
+            if memory_mb > max_mem_mb:
+                print(f"♻️  [Worker {worker_id} | PID {os.getpid()}] 記憶體超標 ({memory_mb:.1f} MB)，請求重啟...")
+                result_queue.put(("RESTART", worker_id)) 
+                break 
 
-    # 沒超標，才執行爬蟲任務
-    return asyncio.run(_async_crawl_worker(site_config))
+            # 記憶體正常，嘗試接任務
+            try:
+                site_config = task_queue.get(timeout=5.0) 
+            except Empty:
+                print(f"⌛ [Worker {worker_id} | PID {os.getpid()}] 任務佇列為空，自動退出")
+                break
+
+            # 檢查結束訊號
+            if site_config is None:
+                # 收到 None 訊號，代表任務已全部派發，直接退出
+                print(f"🛑 [Worker {worker_id} | PID {os.getpid()}] 收到結束訊號，退出")
+                break
+
+            # 執行爬蟲任務
+            try:
+                stats_for_excel = asyncio.run(_async_crawl_worker(site_config))
+                
+                # 傳回結果
+                result_queue.put(stats_for_excel)
+                print(f"\n✅ [Worker {worker_id} | PID {os.getpid()}] 網站 '{site_config.get('name', 'N/A')}' 處理完成")
+                
+            except Exception as e:
+                print(f"💥 [Worker {worker_id} | PID {os.getpid()}] 執行任務 '{site_config.get('name', 'N/A')}' 時發生錯誤: {e}")
+                # 回報失敗，包含網站資訊以便追蹤
+                result_queue.put(("FAILED", site_config.get('name', 'N/A')))
+        
+        except Exception as loop_e:
+            # 捕捉 worker 迴圈本身的錯誤
+            print(f"🆘 [Worker {worker_id} | PID {os.getpid()}] 迴圈發生嚴重錯誤: {loop_e}")
+            result_queue.put(("RESTART", worker_id)) # 也請求重啟
+            break
+            
+    print(f"👋 [Worker {worker_id} | PID {os.getpid()}] 結束")
 
 
 def auto_shutdown_vm():
@@ -189,10 +216,8 @@ def auto_shutdown_vm():
     自動關閉 GCE VM 執行個體
     """
     try:
-        import subprocess
-        
         # 直接使用固定的 VM 名稱和區域
-        vm_name = "crawler-webcheck-mpstandard"
+        vm_name = "crawler-webcheck-mpselfqueue"
         zone = "asia-east1-c"
         
         print(f"🎉 任務全部完成，準備自動關閉 VM: {vm_name}")
@@ -260,14 +285,14 @@ def main():
 
     print("🚀 啟動 Multiprocessing 網站爬蟲...")
 
-    # 1. Mainprocess 初始化 Reporter
+    # 初始化 Reporter
     reporter = ReportGenerationAgent()
     output_path = reporter.initialize_excel_report()
     print(f"Excel 報告檔案初始化完成: {output_path}")
     
     processed_urls = reporter.get_processed_urls()
     
-    # 2. 準備要傳遞給子進程的任務列表
+    # 任務列表
     websites_to_process = []
     for site in websites:
         url = site["URL"]
@@ -307,74 +332,150 @@ def main():
             
         websites_to_process.append(site)
     
-    print(f"📋 總共 {len(websites)} 個網站，剩餘 {len(websites_to_process)} 個待處理")
+    num_total_tasks = len(websites_to_process)
+    print(f"📋 總共 {len(websites)} 個網站，剩餘 {num_total_tasks} 個待處理")
     
     if not websites_to_process:
         print("🎉 所有網站都已處理完成！")
         reporter.finalize_excel_report()
         print(f"📄 報告已儲存到: {output_path}")
         
-        # 關機邏輯
+        # 關機
         auto_shutdown_vm()
         return
 
-    # 3. 使用 multiprocessing.Pool + memory 管理
-    print(f"\n🚀 啟動 {args.concurrent} 個並行處理程序，每個記憶體上限 {args.max_mem_mb} MB")
+    # 建立手動的 Process 和 Queue
+    
+    task_queue = Queue()
+    result_queue = Queue()
+    
+    for site_config in websites_to_process:
+        task_queue.put(site_config)
+    
+    # 放入結束訊號，等於 worker 數的 None
+    for _ in range(args.concurrent):
+        task_queue.put(None)
+        
+    # 建立 worker pool. {id: Process}
+    worker_pool = {}
+
+    print(f"\n🚀 啟動 {args.concurrent} 個自訂 worker...")
     start_time = time.time()
     
-    crawl_success = True
+    # 啟動新 worker 的輔助函數
+    def start_new_worker(worker_id):
+        print(f"🌱 [Main-NEW_WORKER] 正在啟動新的 Worker {worker_id}...")
+        p = Process(
+            target=worker_process_loop, 
+            args=(worker_id, task_queue, result_queue, args.max_mem_mb)
+        )
+        p.start()
+        worker_pool[worker_id] = p
+
+    for i in range(args.concurrent):
+        start_new_worker(i)
+
+    # --- Main 處理迴圈開始---
+    
     successful_sites = 0
     failed_sites = 0
-    
-    try:
-        # 建立一個 Pool
-        with multiprocessing.Pool(processes=args.concurrent) as pool:
+    processed_count = 0
+    crawl_success = True
 
-            # 使用 imap_unordered 來即時取得 worker 結果
-            results = pool.imap_unordered(run_crawl_task, websites_to_process)
+    try:
+        while processed_count < num_total_tasks:
             
-            # Main process 接收從 sub process 傳回的「小字典」
-            for stats_for_excel in results:
-                if stats_for_excel:
-                    # Main process 呼叫 add_site_to_excel 寫入結果
+            try:
+                result = result_queue.get(timeout=600.0) 
+                
+                # 處理 RESTART
+                if isinstance(result, tuple) and result[0] == "RESTART":
+                    worker_id_to_restart = result[1]
+                    
+                    print(f"\n🔥 [Main-RESTART_PROCESS_1] 收到 Worker {worker_id_to_restart} 的重啟請求")
+                    
+                    # 確保舊的 process 被清理
+                    if worker_id_to_restart in worker_pool:
+                        old_worker = worker_pool.pop(worker_id_to_restart)
+                        if old_worker.is_alive():
+                            print(f"⏳ [[Main-RESTART_PROCESS_2] 正在 join 舊的 Worker {worker_id_to_restart}...")
+                            old_worker.join(timeout=10) # 給 10 秒
+                            if old_worker.is_alive():
+                                print(f"⚠️ [[Main-RESTART_PROCESS_3] Worker {worker_id_to_restart} join 超時，強制 terminate")
+                                old_worker.terminate()
+                                old_worker.join() # 確保 terminate 完成
+                    
+                    # 重新啟動一個同 ID 的新 worker
+                    start_new_worker(worker_id_to_restart)
+
+                # 處理 FAILED
+                elif isinstance(result, tuple) and result[0] == "FAILED":
+                    failed_site_name = result[1]
+                    print(f"📊 [Main-FAILED] 收到失敗任務: {failed_site_name}")
+                    failed_sites += 1
+                    processed_count += 1
+                    print(f"📈 [進度] {processed_count} / {num_total_tasks} (成功: {successful_sites}, 失敗: {failed_sites})")
+
+                # 處理成功的任務
+                else:
                     try:
-                        # 在 Main process 中記錄爬取日期
                         crawl_date = datetime.now().strftime('%Y-%m-%d %H:%M')
-                        stats_for_excel['crawl_date'] = crawl_date
+                        result['crawl_date'] = crawl_date
                         
-                        reporter.add_site_to_excel(stats_for_excel)
+                        reporter.add_site_to_excel(result) # 寫入 Excel
                         successful_sites += 1
                     except Exception as e:
                         print(f"❌ 寫入 Excel 失敗: {e}")
                         failed_sites += 1
+                    
+                    processed_count += 1
+                    print(f"📈 [進度] {processed_count} / {num_total_tasks} (成功: {successful_sites}, 失敗: {failed_sites})")
+            
+            except Empty:
+                # 若 10 分鐘都沒有任何 worker 回傳結果檢查
+                print("⏰ [Main-CHECK] 等待結果超過 10 分鐘，檢查 worker 狀態")
+                all_dead = True
+                for i, p in worker_pool.items():
+                    if p.is_alive():
+                        print(f"  -> Worker {i} (PID {p.pid}) 仍在執行中")
+                        all_dead = False
+                
+                if all_dead:
+                    print("❌ [Main-CHECK] 所有 worker 都已死亡，但任務未完成！強制退出...")
+                    crawl_success = False
+                    break # 跳出 while 迴圈
                 else:
-                    failed_sites += 1
+                    print("... 仍有 worker 存活，繼續等待...")
 
+    except Exception as e:
+        print(f"\n💥 主迴圈發生嚴重錯誤: {e}")
+        crawl_success = False
+        print("🚨 [Main-TERMINATE] 正在終止所有 worker...")
+        for p in worker_pool.values():
+            if p.is_alive():
+                p.terminate()
+                p.join()
+
+    finally:
         total_duration = time.time() - start_time
         total_duration_formatted = f"{int(total_duration // 60)}分{int(total_duration % 60)}秒"
         
-        print(f"\n🎉 並行處理完成!")
+        print(f"\n{'='*50}")
+        print(f"🎉 並行處理完成!")
         print(f"📊 成功處理: {successful_sites} 個網站")
         print(f"❌ 失敗: {failed_sites} 個網站") 
         print(f"⏱️ 總耗時: {total_duration_formatted}")
-
-    except Exception as e:
-        print(f"\n💥 處理過程中發生嚴重錯誤: {e}")
-        crawl_success = False
-
-    finally:
-        # Main process 完成報告
-        reporter.finalize_excel_report()
-        print(f"\n📄 報告已儲存到: {output_path}")
-        print(f"✅ 總共處理了 {len(websites_to_process)} 個新網站")
         
-        # Main process 呼叫關機
-        if crawl_success:
+        reporter.finalize_excel_report()
+        print(f"📄 報告已儲存到: {output_path}\n")
+        
+        if crawl_success and processed_count == num_total_tasks:
             print("準備關機...")
-            # 直接呼叫同步函數
             auto_shutdown_vm()
-        else:
+        elif not crawl_success:
             print("🔧 由於執行過程中發生錯誤，VM 將保持開啟狀態以便除錯")
+        else:
+            print(f"⚠️ 任務未全部完成 ({processed_count}/{num_total_tasks})，VM 將保持開啟狀態")
 
 
 if __name__ == "__main__":
