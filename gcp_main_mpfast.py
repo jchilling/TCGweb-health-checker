@@ -7,6 +7,15 @@ import time
 import multiprocessing
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
+import zipfile
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+from dotenv import load_dotenv
+
+# 載入環境變數
+load_dotenv()
 
 from crawler.web_crawler import WebCrawlerAgent
 from reporter.report_generation_mp import ReportGenerationAgent
@@ -166,6 +175,107 @@ def run_crawl_task(site_config: dict) -> dict:
         return None 
 
 
+def pack_and_send_email(excel_report_path):
+    """
+    打包 (Excel + Log + Assets) 並發送 Email
+    """
+    GMAIL_USER = os.getenv("GMAIL_USER")
+    GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+    TO_EMAIL = os.getenv("TO_EMAIL", GMAIL_USER)  # 如果沒設收件人，預設寄給自己
+
+    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
+        print("❌ 錯誤：未設定 GMAIL_USER 或 GMAIL_APP_PASSWORD 環境變數")
+        print("💡 請確認 .env 檔案已建立且包含必要的設定")
+        return
+    
+    print(f"📧 使用 Gmail 帳號: {GMAIL_USER}")
+    print(f"📬 收件人: {TO_EMAIL}")
+    
+    # zip 檔名
+    timestamp = datetime.now().strftime('%Y%m')
+    zip_filename = f"website_check_results_{timestamp}.zip"
+    
+    try:
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            
+            # Excel
+            if os.path.exists(excel_report_path):
+                print(f"加入報告: {excel_report_path}")
+                zipf.write(excel_report_path, os.path.basename(excel_report_path))
+            else:
+                print(f"⚠️ 找不到報告檔: {excel_report_path}")
+            
+            # crawler_execution.log
+            vm_log_path = os.path.expanduser('~/crawler_execution.log')
+            if os.path.exists(vm_log_path):
+                print(f"加入日誌: {vm_log_path}")
+                zipf.write(vm_log_path, "crawler_execution.log")
+            else:
+                print(f"⚠️ 找不到日誌檔: {vm_log_path}")
+
+            # assets
+            if os.path.exists("assets"):
+                for root, dirs, files in os.walk("assets"):
+                    for file in files:
+                        # 跳過 html 檔
+                        # if file.lower().endswith('.html'):
+                            # continue
+                        
+                        file_path = os.path.join(root, file)
+                        # 在 zip 中的路徑 (保持資料夾結構)
+                        arcname = os.path.relpath(file_path, start=".")
+                        zipf.write(file_path, arcname)
+                print(f"加入各網站詳細檔案")
+            else:
+                print(f"⚠️ 找不到 assets 資料夾")
+            
+        print(f"✅ 壓縮完成: {zip_filename}\n")
+
+        # 檢查 zip 檔案大小
+        zip_size_mb = os.path.getsize(zip_filename) / 1024 / 1024
+        
+        if zip_size_mb > 25:
+            print(f"⚠️ 警告：{zip_size_mb:.2f} 超過 Gmail 25MB 限制，可能無法發送")
+
+        # 送 Email
+        print("📧 正在發送 Email...")
+        msg = MIMEMultipart()
+        msg['Subject'] = f"網站檢核爬蟲完整資料結果 - {datetime.now().strftime('%Y/%m')}"
+        msg['From'] = GMAIL_USER
+        msg['To'] = TO_EMAIL
+        
+        body = (
+            "爬蟲任務已完成。\n\n"
+            "附件應包含：\n"
+            "1. Excel 統計報告\n"
+            "2. 執行日誌 (crawler_execution.log)\n"
+            "3. Assets 資料夾內容\n\n"
+            f"壓縮檔大小: {zip_size_mb:.2f} MB\n\n"
+            "(由 GCP VM 自動發送)"
+        )
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Zip 附件
+        with open(zip_filename, "rb") as f:
+            part = MIMEApplication(f.read(), Name=zip_filename)
+        
+        part['Content-Disposition'] = f'attachment; filename="{zip_filename}"'
+        msg.attach(part)
+        
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            server.send_message(msg)
+            print("✅ Email 發送成功！\n")
+            
+        # 發送後刪除 zip 檔以節省空間
+        os.remove(zip_filename)
+
+    except Exception as e:
+        print(f"❌ 打包或發送 Email 失敗: {e}\n")
+        # import traceback
+        # print(f"詳細錯誤資訊: {traceback.format_exc()}")
+
+
 def auto_shutdown_vm():
     """
     自動關閉 GCE VM 執行個體
@@ -296,6 +406,9 @@ def main():
         reporter.finalize_excel_report()
         print(f"📄 報告已儲存到: {output_path}")
         
+        print("準備打包並發送報告...")
+        pack_and_send_email(output_path)
+        
         # 關機
         auto_shutdown_vm()
         return
@@ -348,10 +461,10 @@ def main():
         print(f"\n📄 報告已儲存到: {output_path}")
         print(f"✅ 總共處理了 {len(websites_to_process)} 個新網站")
         
-        # Main process 呼叫關機
         if crawl_success:
+            print("🎉 任務全部完成，準備打包並發送報告...")
+            pack_and_send_email(output_path)
             print("準備關機...")
-            # 直接呼叫同步函數
             auto_shutdown_vm()
         else:
             print("🔧 由於執行過程中發生錯誤，VM 將保持開啟狀態以便除錯")
