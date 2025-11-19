@@ -12,8 +12,10 @@
 - 📅 **智能日期識別**：支援民國年、中英日期等多種格式
 - 🔗 **連結有效性檢查**：檢測內部頁面和外部連結狀態
 - 📊 **專業報告生成**：輸出 JSON 摘要和詳細 Excel 統計報告
-- 🚀 **高效能處理**：支援並行處理和效能優化選項
+- 🚀 **高效能處理**：支援多進程並行處理和記憶體自動管理
 - 🎯 **重複檢測**：自動跳過重複頁面和分頁列表
+- 📧 **自動郵寄報告**：完成後自動打包並發送結果
+- ☁️ **雲端部署支援**：支援 GCP 自動化部署與關機
 
 ## 🚀 快速開始
 
@@ -21,8 +23,8 @@
 
 ```bash
 # 克隆專案
-git clone https://github.com/dayoxiao/Check_TCGweb_cloudver.git
-cd Check_TCGweb_cloudver
+git clone https://github.com/dayoxiao/TCGweb-health-checker.git
+cd TCGweb-health-checker
 
 # 安裝 Python 依賴
 pip install -r requirements.txt
@@ -58,11 +60,12 @@ https://special-site.org,特殊網站,1,FALSE,TRUE
 | `--concurrent` | 並行處理數量 | 2 |
 | `--no-save-html` | 不儲存 HTML 檔案（提升效能） | False |
 | `--no-pagination` | 禁用分頁爬取 | False |
+| `--max-mem-mb` | subprocess記憶體上限 (MB) | 1024 |
 
 ### 執行檢測
 
 ```bash
-# 基本檢測（預設深度2層、存html、遇到分頁列表會自動往下爬）
+# 本地執行基本檢測（預設深度2層、存html、遇到分頁列表會自動往下爬）
 python main.py
 
 # 快速檢測（僅首頁和 sitemap 往下一層）
@@ -70,18 +73,23 @@ python main.py --depth 1 --concurrent 2 --no-save-html --no-pagination
 
 # 通用大規模檢測（往下三層，不存html只爬沒有分頁參數的列表第一頁）
 python main.py --depth 3 --concurrent 2 --no-save-html --no-pagination
+
+# 雲端執行版本（有自動關機gcp vm內容）
+python gcp_main_mpfast.py          # pool管理的簡單模式 (每爬完一個網站重啟一個新的subprocess)
+python gcp_main_mpselfqueue.py     # 自管理模式 (按max-mem-mb監測每一個subprocess，超過重啟)
 ```
 
 ## 📊 輸出報告
 
 ### 1. Excel 統計報告
-位置：`output/website_summary_report_YYYYMMDD.xlsx`
+位置：`output/website_summary_report_YYYY-MM.xlsx`
 
 包含以下統計資訊：
 - 網站基本資訊（名稱、URL）
-- 頁面統計（總數、最後更新日期）
+- 頁面統計（總數、最後更新日期...）
 - 內容時效性（一年前內容數量和比例）
-- 連結狀態（失效內部頁面、外部連結數）
+- 連結狀態（失效內部頁面、失效外部連結數...）
+- 執行資訊（爬取耗時、爬取日期）
 
 ### 2. 詳細頁面摘要檔案
 位置：`assets/{網站名稱}/page_summary.json`
@@ -129,16 +137,18 @@ python main.py --depth 3 --concurrent 2 --no-save-html --no-pagination
 ## 🏗️ 系統架構
 
 ```
-├── main.py                    # 主程式入口
+├── main.py                    # 本地執行主程式
+├── gcp_main_*.py              # 雲端部署版本
 ├── crawler/
 │   └── web_crawler.py         # 網站爬蟲引擎
 ├── analyzer/
 │   └── date_extraction.py     # 智能日期識別
 ├── reporter/
-│   └── report_generation.py   # 報告生成系統
+│   └── report_generation*.py  # 報告生成系統
 ├── utils/
 │   ├── extract_problematic_links.py  # 錯誤連結提取
-│   └── log_writer.py          # 日誌記錄工具
+│   ├── log_writer.py          # 日誌記錄工具
+│   └── email_reporter.py      # 自動郵寄功能
 ├── config/
 │   └── websites.csv           # 網站設定檔
 ├── assets/                    # 爬取資料儲存
@@ -148,13 +158,30 @@ python main.py --depth 3 --concurrent 2 --no-save-html --no-pagination
 ### 系統需求
 
 - Python 3.8+
-- 充足的磁碟空間（不存html的情況下每個網站最多約 10MB 左右）
+- 充足的磁碟空間（至少20MB）
 - 穩定的網路連線
-- 記憶體：建議爬取單網站預留 4GB 以上的空間
+- 記憶體：建議每個process預留 4GB 以上空間供執行
+
+## ☁️ 雲端部署
+
+支援 Google Cloud Platform 自動化部署：
+
+```bash
+# 設定環境
+bash setup-environment.sh
+
+# 啟動雲端執行（含自動關機）
+bash run-crawler-fast.sh      # 簡單模式
+bash run-crawler-selfqueue.sh # 自管理模式
+```
+
+完全自動化部署可使用 startup script 放置在 vm 開機指令：
+- `startup-script-fast.sh` / `startup-script-selfqueue.sh`
+- VM 啟動時自動調用上述腳本執行環境安裝 → 程式執行 → 關機
 
 ## 📋 專案資訊
 
-- **版本**: 1.0.0
+- **版本**: 1.1.0
 - **最後更新**: 2025年
 - **維護者**: dayoxiao
 
