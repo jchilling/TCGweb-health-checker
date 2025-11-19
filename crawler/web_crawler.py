@@ -880,6 +880,13 @@ class WebCrawlerAgent:
             context, url, "", base_output_dir, url_to_dir_map, url_to_title_map, 0
         )
         
+        # 建立合法的domain列表：原始URL + 重定向後的URL
+        allowed_domains = {urlparse(url).netloc}
+        if homepage_actual_url != url:
+            allowed_domains.add(urlparse(homepage_actual_url).netloc)
+        
+        self._log(f"Allowed domains for this crawl: {allowed_domains}")
+        
         # 將主頁加入已訪問和狀態結果
         visited.add(url)
         # 如果有重定向，也將實際URL加入visited
@@ -952,6 +959,11 @@ class WebCrawlerAgent:
 
         while queue:
             current_url, parent_url, current_depth = queue.pop(0)
+            
+            # 檢查當前URL是否屬於允許的domain
+            current_domain = urlparse(current_url).netloc
+            if current_domain not in allowed_domains:
+                continue
             
             if current_url in visited or current_depth > max_depth:
                 continue
