@@ -5,7 +5,7 @@
 
 set -e
 
-PROJECT_USER="jchilling"
+PROJECT_USER="hyc9977"
 LOG_FILE="/home/$PROJECT_USER/vm_startup.log"
 
 # 記錄 VM 啟動
