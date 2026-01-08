@@ -6,7 +6,7 @@
 set -e
 
 # --- 設定變數 ---
-PROJECT_USER="jchilling"
+PROJECT_USER="hyc9977la"
 PROJECT_DIR="/home/$PROJECT_USER/TCGweb-health-checker"
 REPO_URL="https://github.com/jchilling/TCGweb-health-checker"
 LOG_FILE="/home/$PROJECT_USER/setup_environment.log"
@@ -37,7 +37,17 @@ apt-get install -y \
     libgbm1 \
     libcairo2 \
     libpango-1.0-0 \
-    libasound2 >> $LOG_FILE 2>&1
+    libasound2 \
+    libnss3 \
+    libnspr4 \
+    libdrm2 \
+    libxss1 \
+    libgconf-2-4 \
+    libxshmfence1 \
+    libxkbcommon-x11-0 \
+    fonts-liberation \
+    libappindicator3-1 \
+    xdg-utils >> $LOG_FILE 2>&1ZZZZ
 
 # --- 3. 建立使用者 (如果不存在) ---
 if ! id "$PROJECT_USER" >/dev/null 2>&1; then
