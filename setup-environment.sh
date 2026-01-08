@@ -6,9 +6,9 @@
 set -e
 
 # --- 設定變數 ---
-PROJECT_USER="daanyoyo"
+PROJECT_USER="jchilling"
 PROJECT_DIR="/home/$PROJECT_USER/TCGweb-health-checker"
-REPO_URL="https://github.com/dayoxiao/TCGweb-health-checker"
+REPO_URL="https://github.com/jchilling/TCGweb-health-checker"
 LOG_FILE="/home/$PROJECT_USER/setup_environment.log"
 
 # --- 記錄開始 ---

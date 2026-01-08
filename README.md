@@ -23,7 +23,7 @@
 
 ```bash
 # 克隆專案
-git clone https://github.com/dayoxiao/TCGweb-health-checker.git
+git clone https://github.com/jchilling/TCGweb-health-checker.git
 cd TCGweb-health-checker
 
 # 安裝 Python 依賴
@@ -183,6 +183,6 @@ bash run-crawler-selfqueue.sh # 自管理模式
 
 - **版本**: 1.1.0
 - **最後更新**: 2025年
-- **維護者**: dayoxiao
+- **維護者**: jchilling
 
 ⭐ 如果這個專案對你有幫助，請給個星星支持一下！

@@ -5,7 +5,7 @@
 
 set -e
 
-PROJECT_USER="daanyoyo"
+PROJECT_USER="jchilling"
 LOG_FILE="/home/$PROJECT_USER/vm_startup.log"
 
 # 記錄 VM 啟動
@@ -30,7 +30,7 @@ if [ ! -f "/home/$PROJECT_USER/.crawler_env_installed" ]; then
         if ! id "$PROJECT_USER" >/dev/null 2>&1; then
             useradd -m -s /bin/bash "$PROJECT_USER"
         fi
-        sudo -u $PROJECT_USER git clone "https://github.com/dayoxiao/TCGweb-health-checker" "$SCRIPT_DIR" >> $LOG_FILE 2>&1
+        sudo -u $PROJECT_USER git clone "https://github.com/jchilling/TCGweb-health-checker" "$SCRIPT_DIR" >> $LOG_FILE 2>&1
     fi
     
     # 執行環境安裝
